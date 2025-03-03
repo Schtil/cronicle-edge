@@ -127,6 +127,15 @@ let vars = Object.entries(process.env)
     .filter(([k, v]) => ((k.startsWith('JOB_') || k.startsWith('DOCKER_') || k.startsWith('ARG') || include.indexOf(k) > -1) && exclude.indexOf(k) === -1))
     .map(([k, v]) => `${truncVar ? k.replace(/^DOCKER_/, '') : k}=${v}`)
 
+if (process.env.OPTIONS) {
+    let extraOptions = process.env.OPTIONS;
+    extraOptions.split(/\r?\n/).forEach(line => {
+        if (line.trim() !== '') {
+            vars.push(line.trim());
+        }
+    });
+}
+
 // CONTAINER SETTING
 const createOptions = {
     Image: imageName,
