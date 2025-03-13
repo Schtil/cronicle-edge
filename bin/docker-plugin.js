@@ -7,6 +7,54 @@ const { EOL } = require('os');
 const path = require('path')
 const fs = require('fs')
 
+// dockerode does not support docker-credential-helper
+// so we need to use docker-credential-helpers
+const useCredHelper = parseInt(process.env['USE_CREDHELPER'] || "0");
+
+function getDockerConfig() {
+    const dockerConfigPath = process.env.DOCKER_CONFIG
+      ? path.join(process.env.DOCKER_CONFIG, 'config.json')
+      : path.join(os.homedir(), '.docker', 'config.json');
+    try {
+        const configContent = fs.readFileSync(dockerConfigPath, 'utf8');
+        return JSON.parse(configContent);
+    } catch (e) {
+        return {};
+    }
+}
+
+function getRegistryAuth(registry) {
+    const dockerConfig = getDockerConfig();
+    if (dockerConfig.credHelpers && dockerConfig.credHelpers[registry]) {
+        const helperName = dockerConfig.credHelpers[registry];
+        const helperBinary = `docker-credential-${helperName}`;
+        try {
+            const result = spawnSync(helperBinary, ['get'], {
+                input: registry,
+                encoding: 'utf8'
+            });
+            if (result.error) {
+                throw result.error;
+            }
+            const output = result.stdout.trim();
+            const cred = JSON.parse(output);
+            return { username: cred.Username, password: cred.Secret };
+        } catch (e) {
+            console.error(`Error handling ${helperBinary}: ${e.message}`);
+            return null;
+        }
+    }
+    return null;
+}
+
+function getRegistryFromImage(image) {
+    const parts = image.split('/');
+    if (parts.length > 1 && (parts[0].includes('.') || parts[0].includes(':') || parts[0] === 'localhost')) {
+        return parts[0];
+    }
+    return 'index.docker.io';
+}
+
 // cronicle should send job json to stdin
 let job = {}
 try { job = JSON.parse(fs.readFileSync(process.stdin.fd)) } catch { }
@@ -29,9 +77,21 @@ const exit = (message) => {
 
 let dockerOpts = {}
 
+const registry = getRegistryFromImage(imageName);
+
 let registryAuth = {
     username: process.env['DOCKER_USER'],
     password: process.env['DOCKER_PASSWORD'] 
+}
+
+if (useCredHelper) {
+    const helperAuth = getRegistryAuth(registry);
+    if (helperAuth) {
+        registryAuth = helperAuth;
+        printInfo(`Used credHelper from registry ${registry}`);
+    } else {
+        printInfo(`Error handling credHelper from registry ${registry}. Use ENV.`);
+    }
 }
 
 // check if user specified DOCKER_HOST. If not just user socket default connection
