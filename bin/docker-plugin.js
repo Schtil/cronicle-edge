@@ -6,6 +6,7 @@ const { Writable } = require('stream');
 const { EOL } = require('os');
 const path = require('path')
 const fs = require('fs')
+const os = require('os');
 
 // dockerode does not support docker-credential-helper
 // so we need to use docker-credential-helpers
