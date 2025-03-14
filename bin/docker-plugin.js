@@ -78,24 +78,11 @@ const exit = (message) => {
 
 let dockerOpts = {}
 
-const registry = getRegistryFromImage(imageName);
-
 let registryAuth = {
     username: process.env['DOCKER_USER'],
     password: process.env['DOCKER_PASSWORD'] 
 }
 
-if (useCredHelper) {
-    const helperAuth = getRegistryAuth(registry);
-    if (helperAuth) {
-        registryAuth = helperAuth;
-        printInfo(`Used credHelper from registry ${registry}`);
-    } else {
-        printInfo(`Error handling credHelper from registry ${registry}. Use ENV.`);
-    }
-} else {
-    printInfo(`Use ENV for registry ${registry}`);
-}
 
 // check if user specified DOCKER_HOST. If not just user socket default connection
 let dh = process.env['DOCKER_HOST']
@@ -134,6 +121,20 @@ const autoRemoveNamedVolumes = !!parseInt(process.env['KEEP_NAMED_VOLUMES'])
 const keepEntrypoint = !!parseInt(process.env['KEEP_ENTRYPOINT'])
 const json = !!parseInt(process.env['JSON'])
 let stderr_msg
+
+const registry = getRegistryFromImage(imageName);
+
+if (useCredHelper) {
+    const helperAuth = getRegistryAuth(registry);
+    if (helperAuth) {
+        registryAuth = helperAuth;
+        printInfo(`Used credHelper from registry ${registry}`);
+    } else {
+        printInfo(`Error handling credHelper from registry ${registry}. Use ENV.`);
+    }
+} else {
+    printInfo(`Use ENV for registry ${registry}`);
+}
 
 let command = []
 if ((process.env['COMMAND'] || '').trim()) {
