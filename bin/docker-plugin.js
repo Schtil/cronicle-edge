@@ -9,7 +9,8 @@ const fs = require('fs')
 
 // dockerode does not support docker-credential-helper
 // so we need to use docker-credential-helpers
-const useCredHelper = parseInt(process.env['USE_CREDHELPER'] || "0");
+
+const useCredHelper = !!parseInt(process.env['USE_CREDHELPER'])
 
 function getDockerConfig() {
     const dockerConfigPath = process.env.DOCKER_CONFIG
@@ -92,6 +93,8 @@ if (useCredHelper) {
     } else {
         printInfo(`Error handling credHelper from registry ${registry}. Use ENV.`);
     }
+} else {
+    printInfo(`Use ENV for registry ${registry}`);
 }
 
 // check if user specified DOCKER_HOST. If not just user socket default connection
