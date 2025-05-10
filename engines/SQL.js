@@ -42,7 +42,7 @@ module.exports = class SQLEngine extends Component {
      */
     client  // db client type
 
-    getBlobSizeFn = 'length(V)'
+    getBlobSizeFn = 'length("V")'
 
     /**
      * @type {String}

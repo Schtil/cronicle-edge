@@ -6,6 +6,56 @@ const { Writable } = require('stream');
 const { EOL } = require('os');
 const path = require('path')
 const fs = require('fs')
+const os = require('os');
+
+// dockerode does not support docker-credential-helper
+// so we need to use docker-credential-helpers
+
+const useCredHelper = !!parseInt(process.env['USE_CREDHELPER'])
+
+function getDockerConfig() {
+    const dockerConfigPath = process.env.DOCKER_CONFIG
+      ? path.join(process.env.DOCKER_CONFIG, 'config.json')
+      : path.join(os.homedir(), '.docker', 'config.json');
+    try {
+        const configContent = fs.readFileSync(dockerConfigPath, 'utf8');
+        return JSON.parse(configContent);
+    } catch (e) {
+        return {};
+    }
+}
+
+function getRegistryAuth(registry) {
+    const dockerConfig = getDockerConfig();
+    if (dockerConfig.credHelpers && dockerConfig.credHelpers[registry]) {
+        const helperName = dockerConfig.credHelpers[registry];
+        const helperBinary = `docker-credential-${helperName}`;
+        try {
+            const result = spawnSync(helperBinary, ['get'], {
+                input: registry,
+                encoding: 'utf8'
+            });
+            if (result.error) {
+                throw result.error;
+            }
+            const output = result.stdout.trim();
+            const cred = JSON.parse(output);
+            return { username: cred.Username, password: cred.Secret };
+        } catch (e) {
+            console.error(`Error handling ${helperBinary}: ${e.message}`);
+            return null;
+        }
+    }
+    return null;
+}
+
+function getRegistryFromImage(image) {
+    const parts = image.split('/');
+    if (parts.length > 1 && (parts[0].includes('.') || parts[0].includes(':') || parts[0] === 'localhost')) {
+        return parts[0];
+    }
+    return 'index.docker.io';
+}
 
 // cronicle should send job json to stdin
 let job = {}
@@ -33,6 +83,7 @@ let registryAuth = {
     username: process.env['DOCKER_USER'],
     password: process.env['DOCKER_PASSWORD'] 
 }
+
 
 // check if user specified DOCKER_HOST. If not just user socket default connection
 let dh = process.env['DOCKER_HOST']
@@ -71,6 +122,20 @@ const autoRemoveNamedVolumes = !!parseInt(process.env['KEEP_NAMED_VOLUMES'])
 const keepEntrypoint = !!parseInt(process.env['KEEP_ENTRYPOINT'])
 const json = !!parseInt(process.env['JSON'])
 let stderr_msg
+
+const registry = getRegistryFromImage(imageName);
+
+if (useCredHelper) {
+    const helperAuth = getRegistryAuth(registry);
+    if (helperAuth) {
+        registryAuth = helperAuth;
+        printInfo(`Used credHelper from registry ${registry}`);
+    } else {
+        printInfo(`Error handling credHelper from registry ${registry}. Use ENV.`);
+    }
+} else {
+    printInfo(`Use ENV for registry ${registry}`);
+}
 
 let command = []
 if ((process.env['COMMAND'] || '').trim()) {
@@ -126,6 +191,15 @@ let include = ['BASE_URL', 'BASE_APP_URL', 'DOCKER_HOST', 'PULL_IMAGE', 'KEEP_CO
 let vars = Object.entries(process.env)
     .filter(([k, v]) => ((k.startsWith('JOB_') || k.startsWith('DOCKER_') || k.startsWith('ARG') || include.indexOf(k) > -1) && exclude.indexOf(k) === -1))
     .map(([k, v]) => `${truncVar ? k.replace(/^DOCKER_/, '') : k}=${v}`)
+
+if (process.env.OPTIONS) {
+    let extraOptions = process.env.OPTIONS;
+    extraOptions.split(/\r?\n/).forEach(line => {
+        if (line.trim() !== '') {
+            vars.push(line.trim());
+        }
+    });
+}
 
 // CONTAINER SETTING
 const createOptions = {
